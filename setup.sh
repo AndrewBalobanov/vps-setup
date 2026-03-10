@@ -592,7 +592,8 @@ echo -e "${YELLOW}  - Домен ${DOMAIN} уже указывает на ${CURR
 echo -e "${YELLOW}  - Вы не превысили лимит запросов Let's Encrypt${NC}"
 echo -e "${YELLOW}  - Порт 80 доступен извне${NC}"
 echo ""
-read -r -p "Получить SSL сертификат сейчас? [yes/NO]: " SSL_CONFIRM
+read -r -p "Получить SSL сертификат сейчас? [yes/NO]: " SSL_CONFIRM < /dev/tty
+log_info "Введено значение: '${SSL_CONFIRM}'"  # можно убрать после отладки
 
 if [[ "${SSL_CONFIRM}" == "yes" ]]; then
     log_info "Запрос SSL сертификата для домена ${DOMAIN}..."
@@ -1001,3 +1002,4 @@ log_info "  Логи сайта:  ${WWW_DIR}/logs/"
 log_info "  Логи ClamAV: /var/log/clamav/daily-scan.log"
 
 log_section "Настройка завершена успешно!"
+
