@@ -753,7 +753,7 @@ EOF
 # Проверка конфигурации SSH перед применением
 if sshd -t -f /etc/ssh/sshd_config; then
     # Перезапускаем SSH с новыми настройками
-    systemctl restart sshd
+    systemctl restart ssh
     log_info "SSH успешно перенастроен с дополнительными параметрами безопасности"
     log_warn "ВАЖНО: SSH доступ сохранен на порту ${SSH_PORT}"
 else
