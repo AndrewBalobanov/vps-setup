@@ -46,14 +46,107 @@ trap 'log_error "Ошибка на строке $LINENO. Код выхода: $?
 # =============================================================================
 # ПЕРЕМЕННЫЕ
 # =============================================================================
-DOMAIN="aicopilot-presentation.ru"
-WWW_DIR="/var/www/aicopilot-presentation"
+
+# --- Интерактивный ввод параметров ---
+log_section "Ввод параметров настройки"
+
+# Функция для чтения непустого значения
+read_required() {
+    local prompt="$1"
+    local varname="$2"
+    local default="$3"
+    local value=""
+
+    while true; do
+        if [ -n "${default}" ]; then
+            read -r -p "${prompt} [${default}]: " value < /dev/tty
+            value="${value:-${default}}"
+        else
+            read -r -p "${prompt}: " value < /dev/tty
+        fi
+
+        if [ -n "${value}" ]; then
+            eval "${varname}='${value}'"
+            break
+        else
+            echo -e "${RED}[ERROR]${NC} Значение не может быть пустым. Попробуйте снова."
+        fi
+    done
+}
+
+# Функция для чтения пароля (без отображения на экране)
+read_password() {
+    local prompt="$1"
+    local varname="$2"
+    local value=""
+    local value2=""
+
+    while true; do
+        read -r -s -p "${prompt}: " value < /dev/tty
+        echo ""
+        read -r -s -p "Повторите пароль: " value2 < /dev/tty
+        echo ""
+
+        if [ -z "${value}" ]; then
+            echo -e "${RED}[ERROR]${NC} Пароль не может быть пустым. Попробуйте снова."
+            continue
+        fi
+
+        if [ "${value}" = "${value2}" ]; then
+            eval "${varname}='${value}'"
+            break
+        else
+            echo -e "${RED}[ERROR]${NC} Пароли не совпадают. Попробуйте снова."
+        fi
+    done
+}
+
+echo -e "${BLUE}Введите параметры для настройки сервера:${NC}\n"
+
+# Запрос домена
+read_required "Введите доменное имя (например: example.ru)" DOMAIN
+
+# Директория проекта формируется из домена: убираем www. если есть,
+# берём только первую часть до первой точки
+DOMAIN_CLEAN="${DOMAIN#www.}"
+PROJECT_NAME="${DOMAIN_CLEAN%%.*}"
+WWW_DIR="/var/www/${PROJECT_NAME}"
+
+echo -e "${GREEN}[INFO]${NC} Директория проекта: ${WWW_DIR}"
+
+# Запрос параметров базы данных
+echo ""
+echo -e "${BLUE}Параметры базы данных:${NC}"
+read_required "Имя базы данных" DB_NAME "rehab_db"
+read_required "Имя пользователя БД" DB_USER "rehab_user"
+read_password "Пароль пользователя БД" DB_PASS
+
+# SSH порт и email
+SSH_PORT=22
+EMAIL="admin@${DOMAIN}"
+
+# Подтверждение введённых параметров
+echo ""
+echo -e "${BLUE}=========================================${NC}"
+echo -e "${BLUE} Проверьте введённые параметры:${NC}"
+echo -e "${BLUE}=========================================${NC}"
+echo -e "  Домен:              ${GREEN}${DOMAIN}${NC}"
+echo -e "  Директория:         ${GREEN}${WWW_DIR}${NC}"
+echo -e "  База данных:        ${GREEN}${DB_NAME}${NC}"
+echo -e "  Пользователь БД:    ${GREEN}${DB_USER}${NC}"
+echo -e "  Пароль БД:          ${GREEN}(скрыт)${NC}"
+echo -e "  SSH порт:           ${GREEN}${SSH_PORT}${NC}"
+echo -e "  Email (certbot):    ${GREEN}${EMAIL}${NC}"
+echo -e "${BLUE}=========================================${NC}"
+echo ""
+
+read -r -p "Продолжить с этими параметрами? [yes/NO]: " CONFIRM < /dev/tty
+if [[ "${CONFIRM}" != "yes" ]]; then
+    log_error "Настройка отменена пользователем."
+    exit 1
+fi
+
 NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
-DB_NAME="rehab_db"
-DB_USER="rehab_user"
-DB_PASS="user"
-SSH_PORT=22  # Порт SSH (измените если у вас нестандартный)
-EMAIL="admin@${DOMAIN}"  # Email для certbot уведомлений
 
 log_section "Начало настройки сервера"
 log_info "Домен: ${DOMAIN}"
@@ -105,13 +198,13 @@ mkdir -p ${WWW_DIR}/public
 mkdir -p ${WWW_DIR}/logs
 
 # Создание тестовой страницы
-cat > ${WWW_DIR}/public/index.html << 'EOF'
+cat > ${WWW_DIR}/public/index.html << EOF
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AICopilot Presentation</title>
+    <title>${DOMAIN}</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -136,9 +229,9 @@ cat > ${WWW_DIR}/public/index.html << 'EOF'
 </head>
 <body>
     <div class="container">
-        <h1>🚀 AICopilot Presentation</h1>
+        <h1>🚀 ${DOMAIN}</h1>
         <p>Сервер успешно настроен и работает!</p>
-        <p>Домен: aicopilot-presentation.ru</p>
+        <p>Домен: ${DOMAIN}</p>
     </div>
 </body>
 </html>
@@ -1002,4 +1095,5 @@ log_info "  Логи сайта:  ${WWW_DIR}/logs/"
 log_info "  Логи ClamAV: /var/log/clamav/daily-scan.log"
 
 log_section "Настройка завершена успешно!"
+
 
