@@ -686,29 +686,29 @@ log_info "Ротация логов настроена"
 # =============================================================================
 log_section "11. Дополнительные настройки безопасности"
 
-# --- Создание пользователя admin ---
-log_info "Создание пользователя admin..."
+# --- Создание пользователя user ---
+log_info "Создание пользователя user..."
 
-# Запрашиваем пароль для пользователя admin
-read -s -p "Введите пароль для пользователя admin: " ADMIN_PASSWORD
+# Запрашиваем пароль для пользователя user
+read -s -p "Введите пароль для пользователя user: " USER_PASSWORD
 echo  # Добавляем новую строку после ввода пароля
 
 # Проверяем, что пароль введен
-if [ -z "$ADMIN_PASSWORD" ]; then
+if [ -z "$USER_PASSWORD" ]; then
   log_error "Пароль не может быть пустым. Прерываем выполнение."
   exit 1
 fi
 
-# Создаем пользователя admin
-adduser admin --disabled-password
+# Создаем пользователя user
+adduser user --disabled-password
 
-# Устанавливаем пароль для пользователя admin
-echo "admin:$ADMIN_PASSWORD" | chpasswd
+# Устанавливаем пароль для пользователя user
+echo "user:$USER_PASSWORD" | chpasswd
 
-# Добавляем пользователя admin в группу sudo
-usermod -aG sudo admin
+# Добавляем пользователя user в группу sudo
+usermod -aG sudo user
 
-log_info "Пользователь admin создан и добавлен в группу sudo."
+log_info "Пользователь user создан и добавлен в группу sudo."
 
 # --- Отключение лишних модулей Nginx ---
 log_info "Настройка дополнительных параметров безопасности Nginx..."
@@ -763,8 +763,8 @@ PermitEmptyPasswords no
 # Изменить на 'no' после настройки SSH ключей
 PermitRootLogin prohibit-password
 
-# Разрешить вход пользователям из группы admin (если нужно ограничить)
-AllowGroups admin
+# Разрешить вход пользователям из группы sudo (если нужно ограничить)
+AllowGroups sudo
 
 # Таймаут неактивного соединения: отключить через 30 минут неактивности
 ClientAliveInterval 1800
@@ -983,3 +983,4 @@ log_info "  Логи сайта:  ${WWW_DIR}/logs/"
 log_info "  Логи ClamAV: /var/log/clamav/daily-scan.log"
 
 log_section "Настройка завершена успешно!"
+
