@@ -558,10 +558,9 @@ log_info "Удаленный доступ к PostgreSQL настроен"
 log_section "9. Установка Certbot для SSL сертификатов"
 
 log_info "Установка Certbot через snap..."
-# Snap является рекомендованным способом установки certbot от EFF
 snap install --classic certbot
 
-# Создаем символическую ссылку для удобного вызова certbot из командной строки
+# Создаём символическую ссылку для удобного вызова из командной строки
 if [ ! -f /usr/bin/certbot ]; then
     ln -s /snap/bin/certbot /usr/bin/certbot
     log_info "Символическая ссылка certbot создана"
@@ -577,55 +576,60 @@ else
     exit 1
 fi
 
-# Попытка получить SSL сертификат для домена
-# --nginx          - использовать nginx плагин для автоматической настройки
-# --non-interactive - без интерактивных вопросов
-# --agree-tos      - автоматически принять условия использования
-# --email          - email для уведомлений об истечении сертификата
-# --redirect       - автоматически настроить редирект с HTTP на HTTPS
-# -d               - указываем домены для которых нужен сертификат
-log_info "Попытка получения SSL сертификата для домена ${DOMAIN}..."
-log_warn "Для получения сертификата домен ${DOMAIN} должен указывать на этот сервер!"
-
-# Проверяем доступность домена перед запросом сертификата
-CURRENT_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s api.ipify.org 2>/dev/null || echo "unknown")
+# Получаем внешний IP для информирования пользователя
+CURRENT_IP=$(curl -s ifconfig.me 2>/dev/null \
+    || curl -s api.ipify.org 2>/dev/null \
+    || echo "unknown")
 log_info "Текущий внешний IP сервера: ${CURRENT_IP}"
 
-# Запрашиваем сертификат
-certbot --nginx \
-    --non-interactive \
-    --agree-tos \
-    --email "${EMAIL}" \
-    --redirect \
-    -d "${DOMAIN}" \
-    -d "www.${DOMAIN}" && SSL_SUCCESS=true || SSL_SUCCESS=false
+# --- Интерактивный запрос на получение SSL сертификата ---
+log_warn "Лимиты Let's Encrypt: не более 5 одинаковых сертификатов за 168 часов!"
+log_warn "Домен ${DOMAIN} должен указывать на IP ${CURRENT_IP}"
+echo ""
+echo -e "${YELLOW}Хотите получить SSL сертификат сейчас?${NC}"
+echo -e "${YELLOW}Введите 'yes' только если:${NC}"
+echo -e "${YELLOW}  - Домен ${DOMAIN} уже указывает на ${CURRENT_IP}${NC}"
+echo -e "${YELLOW}  - Вы не превысили лимит запросов Let's Encrypt${NC}"
+echo -e "${YELLOW}  - Порт 80 доступен извне${NC}"
+echo ""
+read -r -p "Получить SSL сертификат сейчас? [yes/NO]: " SSL_CONFIRM
 
-if [ "${SSL_SUCCESS}" = true ]; then
-    log_info "SSL сертификат успешно получен!"
-    log_info "Nginx перенастроен для работы по HTTPS"
+if [[ "${SSL_CONFIRM}" == "yes" ]]; then
+    log_info "Запрос SSL сертификата для домена ${DOMAIN}..."
 
-    # Проверка конфигурации Nginx после изменений certbot
-    nginx -t && systemctl reload nginx
-    log_info "Nginx перезагружен с SSL конфигурацией"
+    certbot --nginx \
+        --non-interactive \
+        --agree-tos \
+        --email "${EMAIL}" \
+        --redirect \
+        -d "${DOMAIN}" \
+        -d "www.${DOMAIN}" && SSL_SUCCESS=true || SSL_SUCCESS=false
+
+    if [ "${SSL_SUCCESS}" = true ]; then
+        log_info "SSL сертификат успешно получен!"
+        log_info "Nginx перенастроен для работы по HTTPS"
+        nginx -t && systemctl reload nginx
+        log_info "Nginx перезагружен с SSL конфигурацией"
+    else
+        log_warn "Не удалось получить SSL сертификат."
+        log_warn "Проверьте причину в логе: /var/log/letsencrypt/letsencrypt.log"
+        log_warn "После устранения причины выполните вручную:"
+        log_warn "  certbot --nginx -d ${DOMAIN} -d www.${DOMAIN}"
+    fi
 else
-    log_warn "Не удалось получить SSL сертификат автоматически."
-    log_warn "Возможные причины:"
-    log_warn "  1. Домен ${DOMAIN} не указывает на IP ${CURRENT_IP}"
-    log_warn "  2. Порт 80 не доступен извне"
-    log_warn "  3. Превышен лимит запросов Let's Encrypt"
-    log_warn "После настройки DNS выполните вручную:"
-    log_warn "  certbot --nginx -d ${DOMAIN} -d www.${DOMAIN}"
+    log_info "Получение SSL сертификата пропущено."
+    log_info "Для получения сертификата выполните вручную:"
+    log_info "  certbot --nginx -d ${DOMAIN} -d www.${DOMAIN}"
 fi
 
-# Настройка автоматического обновления сертификата
-# Certbot через snap уже создает таймер systemd для автообновления
-# Проверяем его наличие
+# Проверка автоматического обновления сертификата
 log_info "Проверка автообновления сертификатов..."
 if systemctl is-enabled snap.certbot.renew.timer &>/dev/null; then
     log_info "Таймер автообновления certbot активен (через snap)"
 else
-    # Создаем cron задачу для обновления как резервный вариант
-    (crontab -l 2>/dev/null; echo "0 3 * * * /usr/bin/certbot renew --quiet --post-hook 'systemctl reload nginx'") | crontab -
+    (crontab -l 2>/dev/null; \
+     echo "0 3 * * * /usr/bin/certbot renew --quiet \
+     --post-hook 'systemctl reload nginx'") | crontab -
     log_info "Добавлена cron задача для автообновления сертификата"
 fi
 
@@ -686,44 +690,68 @@ log_info "Ротация логов настроена"
 # =============================================================================
 log_section "11. Дополнительные настройки безопасности"
 
-# --- Создание пользователя user ---
-log_info "Создание пользователя user..."
+# --- Создание пользователя deploy ---
+log_info "Создание системного пользователя deploy..."
 
-# Запрашиваем пароль для пользователя user
-read -s -p "Введите пароль для пользователя user: " USER_PASSWORD
-echo  # Добавляем новую строку после ввода пароля
+# Проверяем существование пользователя
+if id "user" &>/dev/null; then
+    log_warn "Пользователь user уже существует"
+    read -r -p "Обновить пароль для пользователя user? [y/N]: " UPDATE_PASS
+    if [[ "${UPDATE_PASS}" =~ ^[Yy]$ ]]; then
+        # Читаем пароль с подтверждением
+        while true; do
+            read -r -s -p "Введите новый пароль для пользователя user: " USER_PASSWORD
+            echo
+            read -r -s -p "Подтвердите пароль: " USER_PASSWORD_CONFIRM
+            echo
+            if [ "${USER_PASSWORD}" = "${USER_PASSWORD_CONFIRM}" ]; then
+                break
+            else
+                log_error "Пароли не совпадают, попробуйте снова"
+            fi
+        done
 
-# Проверяем, что пароль введен
-if [ -z "$USER_PASSWORD" ]; then
-  log_error "Пароль не может быть пустым. Прерываем выполнение."
-  exit 1
+        if [ -z "${USER_PASSWORD}" ]; then
+            log_error "Пароль не может быть пустым!"
+            exit 1
+        fi
+
+        echo "user:${USER_PASSWORD}" | chpasswd
+        log_info "Пароль для пользователя user обновлён"
+    else
+        log_info "Пароль не изменён"
+    fi
+else
+    # Читаем пароль с подтверждением
+    while true; do
+        read -r -s -p "Введите пароль для нового пользователя user: " USER_PASSWORD
+        echo
+        read -r -s -p "Подтвердите пароль: " USER_PASSWORD_CONFIRM
+        echo
+        if [ "${USER_PASSWORD}" = "${USER_PASSWORD_CONFIRM}" ]; then
+            break
+        else
+            log_error "Пароли не совпадают, попробуйте снова"
+        fi
+    done
+
+    if [ -z "${USER_PASSWORD}" ]; then
+        log_error "Пароль не может быть пустым!"
+        exit 1
+    fi
+
+    # --gecos ""          - пропускает интерактивные вопросы
+    # --disabled-password - создаёт без пароля (зададим ниже через chpasswd)
+    adduser --disabled-password --gecos "" user
+
+    # Устанавливаем пароль
+    echo "user:${USER_PASSWORD}" | chpasswd
+
+    # Добавляем в группу sudo
+    usermod -aG sudo user
+
+    log_info "Пользователь user создан и добавлен в группу sudo"
 fi
-
-# --- Создание пользователя user ---
-log_info "Создание пользователя user..."
-
-# Запрашиваем пароль для пользователя user
-read -s -p "Введите пароль для пользователя user: " USER_PASSWORD
-echo  # Добавляем новую строку после ввода пароля
-
-# Проверяем, что пароль введен
-if [ -z "$USER_PASSWORD" ]; then
-  log_error "Пароль не может быть пустым. Прерываем выполнение."
-  exit 1
-fi
-
-# Создаем пользователя user
-# --gecos ""         - пропускает интерактивные вопросы (имя, телефон и т.д.)
-# --disabled-password - создаёт без пароля (зададим ниже через chpasswd)
-adduser --disabled-password --gecos "" user
-
-# Устанавливаем пароль для пользователя user
-echo "user:${USER_PASSWORD}" | chpasswd
-
-# Добавляем пользователя user в группу sudo
-usermod -aG sudo user
-
-log_info "Пользователь user создан и добавлен в группу sudo."
 
 # --- Отключение лишних модулей Nginx ---
 log_info "Настройка дополнительных параметров безопасности Nginx..."
@@ -998,5 +1026,4 @@ log_info "  Логи сайта:  ${WWW_DIR}/logs/"
 log_info "  Логи ClamAV: /var/log/clamav/daily-scan.log"
 
 log_section "Настройка завершена успешно!"
-
 
