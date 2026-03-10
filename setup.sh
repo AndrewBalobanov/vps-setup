@@ -237,11 +237,21 @@ cat > ${WWW_DIR}/public/index.html << EOF
 </html>
 EOF
 
-# Установка правильных прав на директорию
+# Установка владельца директории
 chown -R www-data:www-data ${WWW_DIR}
+
+# Устанавливаем права:
+# 755  — владелец читает/пишет/выполняет, группа и остальные — читают/выполняют
+# g+w  — дополнительно разрешаем группе www-data запись в public
+#         чтобы пользователь user (входящий в www-data) мог деплоить файлы
 chmod -R 755 ${WWW_DIR}
+chmod g+w ${WWW_DIR}/public
+
+log_info "Права на директорию ${WWW_DIR}/public:"
+ls -la ${WWW_DIR}/ | grep public
 
 log_info "Директория проекта создана успешно"
+
 
 # =============================================================================
 # 3. УСТАНОВКА И НАСТРОЙКА NGINX
@@ -798,6 +808,14 @@ if id "user" &>/dev/null; then
     USER_PASSWORD=$(generate_password)
     echo "user:${USER_PASSWORD}" | chpasswd
     log_info "Пароль для пользователя user обновлён"
+
+    # Добавляем в группу www-data если ещё не добавлен
+    if ! id -nG user | grep -qw "www-data"; then
+        usermod -a -G www-data user
+        log_info "Пользователь user добавлен в группу www-data"
+    else
+        log_info "Пользователь user уже состоит в группе www-data"
+    fi
 else
     USER_PASSWORD=$(generate_password)
 
@@ -811,7 +829,10 @@ else
     # Добавляем в группу sudo
     usermod -aG sudo user
 
-    log_info "Пользователь user создан и добавлен в группу sudo"
+    # Добавляем в группу www-data для доступа к файлам сайта
+    usermod -a -G www-data user
+
+    log_info "Пользователь user создан и добавлен в группы sudo, www-data"
 fi
 
 log_info "Сгенерированный пароль пользователя user: ${USER_PASSWORD}"
@@ -1054,7 +1075,7 @@ printf '║  СИСТЕМНЫЙ ПОЛЬЗОВАТЕЛЬ                        
 printf '╠══════════════════════════════════════════════════════════════╣\n'
 printf '║  %-20s %-39s ║\n' "Пользователь:" "user"
 printf '║  %-20s %-39s ║\n' "Пароль:"       "${USER_PASSWORD}"
-printf '║  %-20s %-39s ║\n' "Группы:"       "sudo"
+printf '║  %-20s %-39s ║\n' "Группы:"       "sudo, www-data"
 printf '╠══════════════════════════════════════════════════════════════╣\n'
 printf '║  СЕРВИСЫ                                                     ║\n'
 printf '╠══════════════════════════════════════════════════════════════╣\n'
@@ -1095,5 +1116,3 @@ log_info "  Логи сайта:  ${WWW_DIR}/logs/"
 log_info "  Логи ClamAV: /var/log/clamav/daily-scan.log"
 
 log_section "Настройка завершена успешно!"
-
-
