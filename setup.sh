@@ -699,11 +699,26 @@ if [ -z "$USER_PASSWORD" ]; then
   exit 1
 fi
 
+# --- Создание пользователя user ---
+log_info "Создание пользователя user..."
+
+# Запрашиваем пароль для пользователя user
+read -s -p "Введите пароль для пользователя user: " USER_PASSWORD
+echo  # Добавляем новую строку после ввода пароля
+
+# Проверяем, что пароль введен
+if [ -z "$USER_PASSWORD" ]; then
+  log_error "Пароль не может быть пустым. Прерываем выполнение."
+  exit 1
+fi
+
 # Создаем пользователя user
-adduser user --disabled-password
+# --gecos ""         - пропускает интерактивные вопросы (имя, телефон и т.д.)
+# --disabled-password - создаёт без пароля (зададим ниже через chpasswd)
+adduser --disabled-password --gecos "" user
 
 # Устанавливаем пароль для пользователя user
-echo "user:$USER_PASSWORD" | chpasswd
+echo "user:${USER_PASSWORD}" | chpasswd
 
 # Добавляем пользователя user в группу sudo
 usermod -aG sudo user
@@ -983,4 +998,5 @@ log_info "  Логи сайта:  ${WWW_DIR}/logs/"
 log_info "  Логи ClamAV: /var/log/clamav/daily-scan.log"
 
 log_section "Настройка завершена успешно!"
+
 
